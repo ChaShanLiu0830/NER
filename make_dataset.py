@@ -1,72 +1,47 @@
-
-
-
-from ast import Continue
-
-
-def get_clean_label(text): 
-    """
-    Extract the information from the origin text of CoNLL03
-    """
-    if text.startswith('-DOCSTART-') or text.startswith('\n'):
-        return False
-    else:
-        token, _, _, NER_tag = text.split()
-        return token, NER_tag.replace('\n','')
-
-def read_file(path):
-    with open(path, 'r') as f:
-        text = f.readlines()
-        # print(text[0:8])
-        return text
-
-def make_label(text):
-    """
-    Indicate the ner-tag to where sentence start and sentence end
-    """
-    sent = []
-    sent_label = []
-    token = ""
-    label = []
-    start_pos = 0
-    end_pos = 0
-    for word in text:
-        if get_clean_label(word):
-            word, ner_tag = get_clean_label(word)
-            token += (word + " ")
-            end_pos =  start_pos + len(word)
-            inform = dict(start = start_pos, end = end_pos, ner_tag = ner_tag)
-            label.append(inform)
-            start_pos = end_pos+1
+from make_label import ttv_dataset
+from torch.utils.data import Dataset, DataLoader, Subset
+import random
+class Conll03_DS(Dataset):
+    def __init__(self, data, label, tokenizer, max_len):
+        self.data = data
+        self.label = label
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+    def __len__(self):
+        return len(self.data)
+    def __getitem__(self, index):
+        data_encode = self.tokenizer.encode(self.data[index], add_special_tokens = True, padding='max_length', max_length = self.max_len, truncation=True, return_tensors = 'pt')
+        label_return = self.label[index]
+        if len(label_return) < self.max_len: #make truncation 
+             label_return += [0]*(self.max_len - len(label_return) )
         else:
-            sent.append(token) if token != '' else Continue
-            sent_label.append(label) if label != [] else Continue
-            token = ""
-            label = []
-            start_pos = 0
-            end_pos = 0
-    return sent, sent_label
+            label_return = label_return[:self.max_len]
+        return {'Data':data_encode, 'Label':label_return}
     
-# def make_tokenize_label(tokenizer, sent, sent_label):
+def load_dataset(dataset_fun, tokenizer, tt, batch_size, max_len,split_size = 1):
     
-def tokenize_label(sent, sent_label, tokenizer):
-    """
-    Make each token by tokenizer, and map the tag to the corresponding token
-    """
-    token = tokenizer(sent)
-    label = ['O']*len(token['input_ids'])
-    # print(token)
-    for each_tag in sent_label:
-        for start2end in range(each_tag['start'], each_tag['end']):
-            index = token.char_to_token(start2end)
-            label[index] = each_tag['ner_tag']
-    return label
+    TT_data, TT_label = ttv_dataset(tokenizer, tt) #train or test dataset
+    Val_data, Val_label = ttv_dataset(tokenizer, 'valid')
+    TT_DS = dataset_fun(TT_data, TT_label, tokenizer, max_len)
+    Val_DS = dataset_fun(Val_data, Val_label, tokenizer, max_len)
+    if split_size != 1 and tt == 'train': # make subset
+        val_index = random.sample(range(0, len(Val_DS)), int(split_size*len(Val_DS)))
+        tt_index =  random.sample(range(0, len(TT_DS)), int(split_size*len(TT_DS)))
+        Val_DS = Subset(Val_DS, indices= val_index)
+        TT_DS = Subset(TT_DS, indices= tt_index)
+    
+    TT_DL = DataLoader(TT_DS, batch_size = batch_size)
+    Val_DL = DataLoader(Val_DS, batch_size = batch_size)
+
+    return TT_DL, Val_DL
 
 if __name__ == '__main__':
-    print(get_clean_label('-DOCSTART-'))
-    test_sent, test_label = make_label(read_file('./dataset/test.txt'))
-    print(test_sent[0:2], test_label[0:2])
     from transformers import BertTokenizerFast
+    from make_label import ttv_dataset
+    import torch
     tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
-    print(tokenize_label(test_sent[1], test_label[1], tokenizer))
+    # tokenizer.add_tokens(['O', 'B-MISC', 'B-LOC'],special_tokens = True)
+    # print(tokenizer.encode(['O', 'B-MISC', 'B-LOC']))
+    test_dl, vv_dl = load_dataset(Conll03_DS, tokenizer, 'train', 5, 200, 0.1)
+    # print(test_ds[0])
     
