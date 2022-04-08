@@ -3,6 +3,9 @@
 
 from ast import Continue
 
+label_type = ['O', 'B-LOC','I-LOC', 'B-ORG', 'I-ORG', 'B-PER', 'I-PER', 'B-MISC', 'I-MISC']
+label_map = {str(k) : v for k,v in enumerate(label_type)}
+label_map_rev = {v: k for k, v in enumerate(label_type)}
 
 def get_clean_label(text): 
     """
@@ -54,19 +57,29 @@ def tokenize_label(sent, sent_label, tokenizer):
     Make each token by tokenizer, and map the tag to the corresponding token
     """
     token = tokenizer(sent)
-    label = ['O']*len(token['input_ids'])
+    label = [0]*len(token['input_ids'])
     # print(token)
     for each_tag in sent_label:
         for start2end in range(each_tag['start'], each_tag['end']):
             index = token.char_to_token(start2end)
-            label[index] = each_tag['ner_tag']
+            label[index] = label_map_rev[each_tag['ner_tag']]
     return label
+def ttv_dataset(tokenizer, ttv):
+    """
+    Make train, test, valid dataset
+    """
+    ttv_sent, ttv_label = make_label(read_file('./dataset/'+ttv+'.txt'))
+    label = []
+    for i in range(0,len(ttv_sent)):
+        label.append(tokenize_label(ttv_sent[i], ttv_label[i], tokenizer))
+    return ttv_sent, label
+    
 
 if __name__ == '__main__':
-    print(get_clean_label('-DOCSTART-'))
     test_sent, test_label = make_label(read_file('./dataset/test.txt'))
     print(test_sent[0:2], test_label[0:2])
     from transformers import BertTokenizerFast
     tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
-    print(tokenize_label(test_sent[1], test_label[1], tokenizer))
+    sent, label = ttv_dataset(tokenizer,'valid')
+    print(sent[0:5], label[0:5])
     
